@@ -12,8 +12,8 @@ namespace pepoHelper
 {
     static class pepoCommon
     {
-        public static IMonitor monitor;
-        public static SpriteBatch spriteBatch;
+        public static IMonitor? monitor;
+        public static SpriteBatch spriteBatch = null!;
 
         public static void LogTr(string message)
         {
@@ -39,14 +39,14 @@ namespace pepoHelper
 
         public static void MultilineString(
             SpriteFont font, string message, Rectangle area,
-            int lineHeightPercent = 110, SpriteBatch b = null)
+            int lineHeightPercent = 110, SpriteBatch? b = null)
             {
             if (b != null) pepoCommon.spriteBatch = b;
             b = pepoCommon.spriteBatch;
             float lineHeight = font.LineHeight(lineHeightPercent);
 
-            Vector2 curPos = new Vector2(area.X, area.Y);
-            StringBuilder workSB = new StringBuilder(area.MaxCharWidth(font));
+            Vector2 curPos = new(area.X, area.Y);
+            StringBuilder workSB = new(area.MaxCharWidth(font));
             foreach (char c in message) {
                 workSB.Append(c);
                 if (font.MeasureString(workSB).X > area.Width) {
@@ -64,14 +64,14 @@ namespace pepoHelper
 
         public static void MultilineStringWithWordWrap(
             SpriteFont font, string message, Rectangle area,
-            int lineHeightPercent = 110, SpriteBatch b = null)
+            int lineHeightPercent = 110, SpriteBatch? b = null)
             {
             if (b != null) pepoCommon.spriteBatch = b;
             b = pepoCommon.spriteBatch;
             float lineHeight = font.LineHeight(lineHeightPercent);
 
-            Vector2 curPos = new Vector2(area.X, area.Y);
-            StringBuilder workStr = new StringBuilder(area.MaxCharWidth(font));
+            Vector2 curPos = new(area.X, area.Y);
+            StringBuilder workStr = new(area.MaxCharWidth(font));
             foreach (string chunkStr in message.Split())
             {
                 workStr.Append(' ');
@@ -90,27 +90,13 @@ namespace pepoHelper
             return;
         }
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage(
-            "Reliability", "CA2000:Dispose objects before losing scope",
-            Justification = "The main game thread requires the Texture2D object to not auto-dispose"
-            )]
-        public static void BlackScreen(SpriteBatch b = null)
+
+        public static void BlackScreen(SpriteBatch? b = null)
         {
             if (b != null) pepoCommon.spriteBatch = b;
             b = pepoCommon.spriteBatch;
-            // Too small, and the drawing engine takes too much CPU time. But too big, the drawing engine
-            // probably will push the graphics driver too heavily. Need to find a right balance here...
-            const int TEXTURE_SIZE = 16;
-            const uint TEXTURE_DATA_ARGB = 0xffffffff;
-            Rectangle target = new Rectangle(0, 0, Game1.viewport.Width, Game1.viewport.Height);
-            Texture2D flatblank = new Texture2D(Game1.graphics.GraphicsDevice, TEXTURE_SIZE, TEXTURE_SIZE);
-            uint[] data = new uint[TEXTURE_SIZE * TEXTURE_SIZE];
-            for (int i = 0; i < data.Length; i++) {
-                data[i] = TEXTURE_DATA_ARGB;
-            }
-            flatblank.SetData<uint>(data);
-            Color black = new Color(0, 0, 0);
-            b.Draw(flatblank, target, black);
+            Rectangle target = new(0, 0, Game1.uiViewport.Width, Game1.uiViewport.Height);
+            b.Draw(Game1.staminaRect, target, Color.Black);
         }
     }
 
@@ -120,12 +106,8 @@ namespace pepoHelper
     /// <remarks>
     /// This is done by overriding the draw() method of the DialogueBox class
     /// </remarks>
-    internal class DialogOnBlack : DialogueBox
+    internal class DialogOnBlack(string dialog) : DialogueBox(dialog)
     {
-        public DialogOnBlack(string dialog) : base(dialog)
-        {
-        }
-
         public override void draw(SpriteBatch b)
         {
             pepoDrawer.BlackScreen(b);
@@ -148,9 +130,9 @@ namespace pepoHelper
         public static void moveRelTiles(this Farmer f, int h=0, int v=0, int faceDir=-1)
         {
             if(f == null) throw new ArgumentNullException(nameof(f), "Farmer object cannot be null!");
-            pepoCommon.LogTr($"farmer was at ({f.getTileX()},{f.getTileY()})");
+            pepoCommon.LogTr($"farmer was at ({f.Tile.X},{f.Tile.Y})");
             f.setTileLocation(f.relTiles(h: h, v: v));
-            pepoCommon.LogTr($"farmer now at ({f.getTileX()},{f.getTileY()})");
+            pepoCommon.LogTr($"farmer now at ({f.Tile.X},{f.Tile.Y})");
             if (faceDir != -1) f.faceDirection(faceDir);
         }
 
@@ -164,7 +146,7 @@ namespace pepoHelper
         public static Vector2 relTiles(this Farmer f, int h=0, int v=0)
         {
             if(f == null) throw new ArgumentNullException(nameof(f), "Farmer object cannot be null!");
-            return new Vector2(f.getTileX() + h, f.getTileY() + v);
+            return new Vector2(f.Tile.X + h, f.Tile.Y + v);
         }
 
     }
@@ -179,13 +161,14 @@ namespace pepoHelper
     {
         /* Properties Publique */
         public Queue<IClickableMenu> menus { get; } = new Queue<IClickableMenu> { };
-        public IDisplayEvents dispEvt { get; set; }
+        public IDisplayEvents dispEvt { get; set; } = null!;
         public bool chainBegun { get { return _chainBegun; } }
         public bool menuCleared { get { return _menuCleared; } }
 
         /* Internal thingies */
         private bool _chainBegun;
         private bool _menuCleared;
+        private int _screenId;
 
         public MenuChainer() { }
 
@@ -193,6 +176,7 @@ namespace pepoHelper
         {
             if (displayEvents == null) throw new ArgumentNullException(nameof(displayEvents));
             _chainBegun = true;
+            _screenId = Context.ScreenId;
             _menuCleared = false;
             pepoCommon.LogTr("starting menuchain");
             (dispEvt = displayEvents).MenuChanged += OnMenuChanged;
@@ -202,14 +186,11 @@ namespace pepoHelper
             pepoCommon.LogTr($"displayed first menu {first}");
         }
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage(
-            "Design", "CA1062:Validate arguments of public methods",
-            Justification = "This is an event; it's unpossible for any of the args to be null"
-            )]
-        public void OnMenuChanged(object sender, MenuChangedEventArgs e)
+        public void OnMenuChanged(object? sender, MenuChangedEventArgs e)
         // Remember: This event is triggered twice per menu; once when the menu is displayed,
         // and once when the menu is dismissed.
         {
+            if (Context.ScreenId != _screenId) return;
             pepoCommon.LogTr($"MenuChanged e.NewMenu = {e.NewMenu}");
             if (e.OldMenu == null) {
                 // if OldMenu == null, this is a newly-displayed menu. Do NOT change
