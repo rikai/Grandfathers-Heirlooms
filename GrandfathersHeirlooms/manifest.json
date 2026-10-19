@@ -1,11 +1,11 @@
 {
   "Name": "Grandfather's Heirlooms",
   "Author": "rikai",
-  "Version": "2.1.0",
+  "Version": "%ProjectVersion%",
   "Description": "A continuation of the Grandfather's Gift Remade",
   "UniqueID": "rikai.GrandfathersHeirlooms",
   "EntryDll": "GrandfathersHeirlooms.dll",
-  "MinimumApiVersion": "1.0",
+  "MinimumApiVersion": "4.1.0",
   "UpdateKeys": [ "Nexus:8557" ],
   "Meta:Changelog": {
     "1.0.0": "Initial Public Release",
@@ -21,6 +21,9 @@
     "2.0.0": "Set positioning based on marriage state, code cleanup/modernization, more detailed logging, rename project, update copyright, GUID & description",
     "2.0.1": "Fix an issue with EntryDLL naming.",
     "2.0.2": "Made console output a bit less spammy by moving Debug and Info level logs to Trace.",
-    "2.1.0": "Adjustments to prepare for SMAPI 4.0"
+    "2.1.0": "Adjustments to prepare for SMAPI 4.0",
+    "2.2.0": "Add support for Stardew Valley 1.6",
+    "2.2.1": "Fix an issue where the correct stats were not being used for the weapon.",
+    "2.3.0": "Changed weapon implementation and made it its own weapon, the Princess's Keepsake, instead of the Elf Blade. WeaponStats setting works again. You no longer lose the Keepsake when you die. You can reread Grandpa's letter under Collections, Letters. A farmhand who reconnects no longer gets a second gift. Split-screen co-op now works correctly. The Keepsake and the chest now come in a gift box beside you. Opening it holds up the Keepsake, and it stays shut until you have two free inventory slots. The directToChest setting is gone."
   }
 }
