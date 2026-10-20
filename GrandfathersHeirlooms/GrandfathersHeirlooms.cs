@@ -1,5 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
+using HarmonyLib;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewModdingAPI.Utilities;
@@ -20,14 +23,12 @@ namespace GrandfathersHeirlooms
         public int triggerDay { get; set; }
         public bool traceLogging { get; set; }
         public string weaponStats { get; set; }
-        public bool directToChest { get; set; }
 
         public ModConfig()
         {
             triggerDay = 2;
             traceLogging = true;
             weaponStats = DEFAULT_WEAPON_STATS;
-            directToChest = false;
         }
     }
 
@@ -38,7 +39,8 @@ namespace GrandfathersHeirlooms
         const string WEAP_ID = "rikai.GrandfathersHeirlooms_PrincessKeepsake";
         const int ELF_BLADE_SPRITE_INDEX = 20;  // reuse the vanilla Elf Blade sprite
         const string MAIL_ID = "rikai.GrandfathersHeirlooms_GrandpaLetter";  // also marks the heirloom as received
-        // const int HOLDUP_MSG_DLY = 2000;
+        const string GIFT_BOX_KEY = "rikai.GrandfathersHeirlooms/GiftBox";  // modData key that marks Grandpa's gift box
+        const string HOLD_UP_KEY = "rikai.GrandfathersHeirlooms/HoldUp";  // modData key that marks a gift to hold up
         private readonly CultureInfo CULTURE = CultureInfo.InvariantCulture;
 
         /***** Properteze *****/
@@ -49,7 +51,7 @@ namespace GrandfathersHeirlooms
         private string letterGrandpaMessage = null!;
         private string narrationMessage1 = null!;
         private string narrationMessage2 = null!;
-        private string inventoryFullMessage = null!;
+        private static string fullInventoryMessage = null!;  // static for the Harmony prefix
 
         /***** Publique Methodes *****/
         public override void Entry(IModHelper helper)
@@ -64,6 +66,11 @@ namespace GrandfathersHeirlooms
             PrepTrigger();
             PrepTranslations();
             PrepWeaponStats();
+
+            new Harmony(ModManifest.UniqueID).Patch(
+                AccessTools.Method(typeof(Chest), nameof(Chest.checkForAction)),
+                prefix: new HarmonyMethod(typeof(GrandfathersHeirlooms), nameof(BeforeChestCheckForAction))
+            );
 
             Helper.Events.Content.AssetRequested += OnAssetRequested;
             Helper.Events.GameLoop.DayStarted += OnDayStarted;
@@ -98,7 +105,7 @@ namespace GrandfathersHeirlooms
             letterGrandpaMessage = tran_get("letter", "Grandpa's Letter");
             narrationMessage1 = tran_get("narration1", "Narration p1");
             narrationMessage2 = tran_get("narration2", "Narration p2");
-            inventoryFullMessage = tran_get("full_inventory", "Inventory Full Message");
+            fullInventoryMessage = tran_get("full_inventory", "Inventory Full Message");
         }
 
         private void PrepWeaponStats()
@@ -206,7 +213,7 @@ namespace GrandfathersHeirlooms
             IClickableMenu letterGrandpa =
                 new LetterViewerMenu(letterGrandpaMessage.Replace("@", farmer.Name))
                 {
-                    exitFunction = () => spawnChestWeapon(farmer, weapon)
+                    exitFunction = () => spawnGiftBox(farmer, weapon)
                 };
             Log("built the menus", LogLevel.Trace);
 
@@ -231,47 +238,40 @@ namespace GrandfathersHeirlooms
             }
         }
 
-        private void spawnChestWeapon(Farmer farmer, MeleeWeapon weapon)
+        private void spawnGiftBox(Farmer farmer, MeleeWeapon weapon)
         {
-            var cloc = Game1.currentLocation;
+            weapon.modData[HOLD_UP_KEY] = "1";
+            List<Item> gifts = new() { weapon, ItemRegistry.Create("(BC)130") };
+            Microsoft.Xna.Framework.Vector2 tile = farmer.isMarriedOrRoommates()
+                ? farmer.relTiles(v: 1)
+                : farmer.relTiles(h: -1);
+            Chest box = new(gifts, tile, giftbox: true);
+            box.modData[GIFT_BOX_KEY] = "1";
+            Game1.currentLocation.setObject(tile, box);
+            Log($"placed the gift box at ({tile.X},{tile.Y})", LogLevel.Trace);
+        }
 
-            // Drop a chest
-            Chest chest = new(true);  // must be "true" or chest won't appear
-            Log("created Chest(true)", LogLevel.Trace);
-            chest.playerChoiceColor.Set(Microsoft.Xna.Framework.Color.Gold);
-            chest.Tint = Microsoft.Xna.Framework.Color.Gold;
-            if (farmer.isMarriedOrRoommates())
+        /// <summary>Keep Grandpa's gift box closed until the player has room for everything in it, then hold up only the marked gifts.</summary>
+        private static bool BeforeChestCheckForAction(Chest __instance, Farmer who, bool justCheckingForActivity, ref bool __result)
+        {
+            if (justCheckingForActivity || !__instance.modData.ContainsKey(GIFT_BOX_KEY))
+                return true;
+            if (who.freeSpotsInInventory() < __instance.Items.CountItemStacks())
             {
-                cloc.setObject(farmer.relTiles(v: 1), chest);
-                Log("Farmer is in love. Chest placed below.", LogLevel.Trace);
+                Game1.drawObjectDialogue(fullInventoryMessage);
+                __result = true;
+                return false;
             }
-            else
+
+            // The game holds up each item left in the box, and each hold-up cuts off the last, so give the others quietly first
+            foreach (Item item in __instance.Items.Where(p => p is not null && !p.modData.ContainsKey(HOLD_UP_KEY)).ToList())
             {
-                cloc.setObject(farmer.relTiles(h: -1), chest);
-                Log("Farmer is alone. Chest placed to the left.", LogLevel.Trace);
+                __instance.Items.Remove(item);
+                who.addItemToInventoryBool(item);
             }
-            Log("dropped chest in front of farmer", LogLevel.Trace);
-
-            Log($"directToChest == {Config.directToChest.ToString(CULTURE)}", LogLevel.Trace);
-
-            farmer.holdUpItemThenMessage(weapon);
-            if (Config.directToChest || farmer.isInventoryFull())
-            {
-                // TODO: Figure out how to wait out the message above before creating a HUDMessage
-                // Game1.addHUDMessage(new HUDMessage(inventoryFullMessage, 2));
-                chest.addItem(weapon);
-                Log("inserted weapon into chest", LogLevel.Trace);
-            }
-            else
-            {
-                farmer.addItemToInventory(weapon);
-                Log("inserted weapon into inventory", LogLevel.Trace);
-            }
-            return;
-
-            // TODO: Instead of a simple chest, make a chest with interaction
-            // TODO: Interaction with chest = Farmer lift weapon above head + chimes
-
+            foreach (Item? item in __instance.Items)
+                item?.modData.Remove(HOLD_UP_KEY);
+            return true;
         }
     }
 }

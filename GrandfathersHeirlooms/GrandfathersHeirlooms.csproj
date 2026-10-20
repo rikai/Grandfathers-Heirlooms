@@ -8,6 +8,7 @@
     <TargetFramework>net6.0</TargetFramework>
     <LangVersion>Latest</LangVersion>
     <Nullable>enable</Nullable>
+    <EnableHarmony>true</EnableHarmony>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.4.0" />
